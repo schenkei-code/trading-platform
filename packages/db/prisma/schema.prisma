@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  avatar        String?
+  role          UserRole  @default(USER)
+  plan          Plan      @default(FREE)
+  emailVerified Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  exchangeKeys  ExchangeKey[]
+  bots          Bot[]
+  strategies    Strategy[]
+  trades        Trade[]
+  positions     Position[]
+  copyFollows   CopyFollow[]  @relation("follower")
+  copyLeaders   CopyFollow[]  @relation("leader")
+  commissions   Commission[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+// ─── Exchange Keys ────────────────────────────────────────────────
+
+model ExchangeKey {
+  id           String   @id @default(cuid())
+  userId       String
+  exchange     String   // binance, bybit, okx, etc.
+  label        String
+  apiKey       String
+  apiSecretEnc String   // encrypted
+  passphrase   String?  // encrypted, for OKX etc.
+  isTestnet    Boolean  @default(false)
+  permissions  String[] // ["SPOT", "FUTURES", "MARGIN"]
+  isActive     Boolean  @default(true)
+  lastUsedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bots  Bot[]
+
+  @@unique([userId, exchange, label])
+  @@map("exchange_keys")
+}
+
+// ─── Bots ─────────────────────────────────────────────────────────
+
+model Bot {
+  id               String    @id @default(cuid())
+  userId           String
+  exchangeKeyId    String
+  strategyId       String?
+  name             String
+  symbol           String
+  status           BotStatus @default(IDLE)
+  mode             BotMode   @default(PAPER)
+
+  // Risk settings
+  maxPositionSize    Decimal   @db.Decimal(20, 8)
+  maxDrawdownPercent Decimal   @default(10) @db.Decimal(5, 2)
+  stopLossPercent    Decimal?  @db.Decimal(5, 2)
+  takeProfitPercent  Decimal?  @db.Decimal(5, 2)
+  trailingStopPercent Decimal? @db.Decimal(5, 2)
+  leverage           Int       @default(1)
+  marginType         MarginType @default(CROSS)
+
+  // Limits
+  maxDailyTrades   Int @default(100)
+  maxOpenPositions Int @default(5)
+  cooldownSeconds  Int @default(0)
+
+  // Strategy parameters
+  parameters Json @default("{}")
+
+  // Performance cache
+  totalPnl         Decimal @default(0) @db.Decimal(20, 8)
+  totalTrades      Int     @default(0)
+  winRate          Decimal @default(0) @db.Decimal(5, 2)
+
+  startedAt DateTime?
+  stoppedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeKey ExchangeKey @relation(fields: [exchangeKeyId], references: [id])
+  strategy    Strategy?   @relation(fields: [strategyId], references: [id])
+  trades      Trade[]
+  positions   Position[]
+
+  @@map("bots")
+}
+
+enum BotStatus {
+  IDLE
+  RUNNING
+  PAUSED
+  STOPPED
+  ERROR
+}
+
+enum BotMode {
+  LIVE
+  PAPER
+  BACKTEST
+}
+
+enum MarginType {
+  CROSS
+  ISOLATED
+}
+
+// ─── Strategies ───────────────────────────────────────────────────
+
+model Strategy {
+  id          String       @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  type        StrategyType @default(TECHNICAL)
+  version     String       @default("1.0.0")
+  code        String?      @db.Text // strategy source code
+  parameters  Json         @default("[]") // StrategyParameter[]
+  isPublic    Boolean      @default(false)
+  isVerified  Boolean      @default(false)
+
+  supportedExchanges String[]
+  supportedIntervals String[]
+  minCandles         Int @default(100)
+  tags               String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bots Bot[]
+
+  @@map("strategies")
+}
+
+enum StrategyType {
+  TECHNICAL
+  GRID
+  DCA
+  ARBITRAGE
+  MARKET_MAKING
+  CUSTOM
+}
+
+// ─── Trades ───────────────────────────────────────────────────────
+
+model Trade {
+  id              String    @id @default(cuid())
+  userId          String
+  botId           String?
+  positionId      String?
+  exchange        String
+  symbol          String
+  side            TradeSide
+  type            TradeType
+  status          TradeStatus @default(NEW)
+
+  price           Decimal   @db.Decimal(20, 8)
+  quantity        Decimal   @db.Decimal(20, 8)
+  filledQuantity  Decimal   @default(0) @db.Decimal(20, 8)
+  averagePrice    Decimal?  @db.Decimal(20, 8)
+  fee             Decimal   @default(0) @db.Decimal(20, 8)
+  feeCurrency     String?
+
+  exchangeOrderId String?
+  realizedPnl     Decimal?  @db.Decimal(20, 8)
+  signal          Json?     // Signal snapshot
+
+  executedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot      Bot?      @relation(fields: [botId], references: [id])
+  position Position? @relation(fields: [positionId], references: [id])
+
+  @@index([userId, symbol, createdAt])
+  @@index([botId, createdAt])
+  @@map("trades")
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum TradeType {
+  MARKET
+  LIMIT
+  STOP_LOSS
+  STOP_LIMIT
+  TAKE_PROFIT
+}
+
+enum TradeStatus {
+  NEW
+  PARTIALLY_FILLED
+  FILLED
+  CANCELED
+  REJECTED
+  EXPIRED
+}
+
+// ─── Positions ────────────────────────────────────────────────────
+
+model Position {
+  id             String         @id @default(cuid())
+  userId         String
+  botId          String?
+  exchange       String
+  symbol         String
+  side           PositionSide
+  status         PositionStatus @default(OPEN)
+
+  entryPrice     Decimal  @db.Decimal(20, 8)
+  currentPrice   Decimal? @db.Decimal(20, 8)
+  quantity       Decimal  @db.Decimal(20, 8)
+  leverage       Int      @default(1)
+
+  unrealizedPnl  Decimal? @db.Decimal(20, 8)
+  realizedPnl    Decimal  @default(0) @db.Decimal(20, 8)
+  totalFees      Decimal  @default(0) @db.Decimal(20, 8)
+
+  stopLoss       Decimal? @db.Decimal(20, 8)
+  takeProfit     Decimal? @db.Decimal(20, 8)
+  trailingStop   Decimal? @db.Decimal(20, 8)
+  liquidationPrice Decimal? @db.Decimal(20, 8)
+
+  openedAt       DateTime @default(now())
+  closedAt       DateTime?
+  updatedAt      DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot    Bot?    @relation(fields: [botId], references: [id])
+  trades Trade[]
+
+  @@index([userId, symbol, status])
+  @@index([botId, status])
+  @@map("positions")
+}
+
+enum PositionSide {
+  LONG
+  SHORT
+}
+
+enum PositionStatus {
+  OPEN
+  CLOSED
+  LIQUIDATED
+}
+
+// ─── Candles (TimescaleDB hypertable) ─────────────────────────────
+
+model CandleData {
+  exchange    String
+  symbol      String
+  interval    String
+  openTime    DateTime
+  open        Decimal  @db.Decimal(20, 8)
+  high        Decimal  @db.Decimal(20, 8)
+  low         Decimal  @db.Decimal(20, 8)
+  close       Decimal  @db.Decimal(20, 8)
+  volume      Decimal  @db.Decimal(20, 8)
+  quoteVolume Decimal  @db.Decimal(20, 8)
+  trades      Int      @default(0)
+
+  @@id([exchange, symbol, interval, openTime])
+  @@index([exchange, symbol, interval, openTime(sort: Desc)])
+  @@map("candles")
+}
+
+// ─── Copy Trading / Follow ────────────────────────────────────────
+
+model CopyFollow {
+  id              String   @id @default(cuid())
+  followerId      String
+  leaderId        String
+  isActive        Boolean  @default(true)
+  copyPercentage  Decimal  @default(100) @db.Decimal(5, 2) // % of leader's trade size
+  maxPerTrade     Decimal? @db.Decimal(20, 8)
+  allowedSymbols  String[] // empty = all
+  invertSignals   Boolean  @default(false)
+
+  totalCopiedTrades Int     @default(0)
+  totalPnl          Decimal @default(0) @db.Decimal(20, 8)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  follower User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  leader   User @relation("leader", fields: [leaderId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, leaderId])
+  @@map("copy_follows")
+}
+
+// ─── Commissions ──────────────────────────────────────────────────
+
+model Commission {
+  id         String          @id @default(cuid())
+  userId     String          // leader who earns
+  tradeId    String?
+  type       CommissionType
+  amount     Decimal         @db.Decimal(20, 8)
+  currency   String          @default("USDT")
+  status     CommissionStatus @default(PENDING)
+  paidAt     DateTime?
+  createdAt  DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("commissions")
+}
+
+enum CommissionType {
+  COPY_TRADE
+  REFERRAL
+  STRATEGY_LICENSE
+}
+
+enum CommissionStatus {
+  PENDING
+  PAID
+  CANCELED
+}
+
+// ─── Notifications ────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  channel   String[]         // ["WEB", "EMAIL", "TELEGRAM", "PUSH"]
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  TRADE_EXECUTED
+  BOT_STARTED
+  BOT_STOPPED
+  BOT_ERROR
+  POSITION_OPENED
+  POSITION_CLOSED
+  MARGIN_WARNING
+  SYSTEM
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldData   Json?
+  newData   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
