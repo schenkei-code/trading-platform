@@ -29,47 +29,72 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 h-screen bg-card border-r border-border flex flex-col shrink-0">
+    <aside className="w-64 h-screen bg-[#0a0a0a]/80 backdrop-blur-xl border-r border-white/10 flex flex-col shrink-0">
       {/* Logo */}
-      <div className="p-6 border-b border-border">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-            <span className="text-accent-foreground font-bold text-sm">TP</span>
+      <div className="p-6 border-b border-white/5">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#00FF88]/10 border border-[#00FF88]/20 flex items-center justify-center">
+            <span className="text-[#00FF88] font-black text-sm">TP</span>
           </div>
-          <span className="font-bold text-lg">Trading Platform</span>
+          <div>
+            <span className="font-black text-sm uppercase italic tracking-tight block leading-tight">
+              Trading
+            </span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-white/30">
+              Platform
+            </span>
+          </div>
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <p className="text-[9px] font-black uppercase tracking-widest text-white/20 px-3 py-2">
+          Menu
+        </p>
         {navItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${
                 isActive
-                  ? "bg-accent/10 text-accent"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  ? "bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/20 shadow-[0_0_20px_rgba(0,255,136,0.05)]"
+                  : "text-white/40 hover:text-white/70 hover:bg-white/5 border border-transparent"
               }`}
             >
               {icons[item.icon]}
-              {item.label}
+              <span className="font-medium">{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
+      {/* Status Indicator */}
+      <div className="px-3 pb-2">
+        <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-[#00FF88] animate-pulse" />
+            <p className="text-[9px] font-black uppercase tracking-widest text-white/30">
+              System Status
+            </p>
+          </div>
+          <p className="text-xs text-white/50 font-mono">All systems operational</p>
+        </div>
+      </div>
+
       {/* Bottom */}
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-            <span className="text-xs text-muted-foreground">?</span>
+      <div className="p-3 border-t border-white/5">
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-all cursor-pointer">
+          <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+            <span className="text-[10px] text-white/30 font-bold">?</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Not signed in</p>
-            <p className="text-xs text-muted-foreground">Free plan</p>
+            <p className="text-sm font-medium text-white/60 truncate">Not signed in</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-white/20">
+              Free Plan
+            </p>
           </div>
         </div>
       </div>
